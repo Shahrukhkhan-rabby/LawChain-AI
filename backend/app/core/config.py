@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = 384
 
     # --- LLM model (Groq free tier) ---
-    GROQ_MODEL: str = "llama3-8b-8192"
+    GROQ_MODEL: str = "llama-3.1-8b-instant"
 
     class Config:
         env_file = ("../.env", ".env")
