@@ -1,8 +1,8 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 langchain==0.2.16
-langchain-openai==0.1.25
 langchain-community==0.2.16
+langchain-groq==0.1.9
 faiss-cpu==1.8.0
 pdfplumber==0.11.4
 pydantic==2.7.4
@@ -10,6 +10,7 @@ pydantic-settings==2.3.4
 python-jose[cryptography]==3.3.0
 python-multipart==0.0.9
 tiktoken==0.7.0
+sentence-transformers==3.0.1
 pytest==8.2.2
 hypothesis==6.103.4
 pytest-asyncio==0.23.8

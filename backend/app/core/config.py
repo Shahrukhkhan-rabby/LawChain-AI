@@ -8,8 +8,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # --- External service credentials (required, loaded from env) ---
-    OPENAI_API_KEY: str
+    # --- External service credentials ---
+    GROQ_API_KEY: str          # Free at console.groq.com
     JWT_SECRET: str
 
     # --- JWT configuration ---
@@ -32,8 +32,15 @@ class Settings(BaseSettings):
     # --- Input validation ---
     MAX_QUESTION_LENGTH: int = 2000
 
+    # --- Embedding model (local, free) ---
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_DIM: int = 384
+
+    # --- LLM model (Groq free tier) ---
+    GROQ_MODEL: str = "llama3-8b-8192"
+
     class Config:
-        env_file = ("../.env", ".env")  # look in project root first, then cwd
+        env_file = ("../.env", ".env")
         env_file_encoding = "utf-8"
 
 

@@ -1,8 +1,8 @@
 """
 Ingestion pipeline for LawChain-AI PDF Chatbot.
 
-Provides PDF text extraction, text chunking, embedding, and the
-IngestionPipeline orchestrator that wires all three phases together.
+Provides PDF text extraction, text chunking, local embedding via
+sentence-transformers, and the IngestionPipeline orchestrator.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import pdfplumber
 import tiktoken
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
+from sentence_transformers import SentenceTransformer
 
 from app.core.config import settings
 from app.models.models import (
@@ -41,6 +41,22 @@ _tokenizer = tiktoken.get_encoding(_ENCODING_NAME)
 def _token_length(text: str) -> int:
     """Return the number of tokens in *text* using cl100k_base encoding."""
     return len(_tokenizer.encode(text))
+
+
+# ---------------------------------------------------------------------------
+# Local embedding model (loaded once at startup)
+# ---------------------------------------------------------------------------
+
+_embedding_model: SentenceTransformer | None = None
+
+
+def _get_embedding_model() -> SentenceTransformer:
+    """Lazily load and cache the sentence-transformers model."""
+    global _embedding_model  # noqa: PLW0603
+    if _embedding_model is None:
+        logger.info("Loading embedding model: %s", settings.EMBEDDING_MODEL)
+        _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
+    return _embedding_model
 
 
 # ---------------------------------------------------------------------------
@@ -183,33 +199,26 @@ def chunk_text(
 
 
 def embed_chunks(chunks: list[Chunk]) -> list[EmbeddedChunk]:
-    """Generate vector embeddings for a list of chunks.
+    """Generate vector embeddings using a local sentence-transformers model.
 
-    Uses OpenAI ``text-embedding-3-small`` (1536 dimensions) via
-    :class:`langchain_openai.OpenAIEmbeddings`.  All chunk texts are sent in a
-    single batched call.
+    Uses ``all-MiniLM-L6-v2`` (384 dimensions) — runs entirely locally,
+    no API key or internet connection required.
 
     Args:
         chunks: Non-empty list of :class:`Chunk` objects to embed.
 
     Returns:
         A list of :class:`EmbeddedChunk` objects in the same order as *chunks*.
-
-    Raises:
-        AssertionError: If the number of returned embeddings does not match the
-            number of input chunks.
     """
-    embeddings_model = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        openai_api_key=settings.OPENAI_API_KEY,
-    )
-
+    model = _get_embedding_model()
     texts = [c.text for c in chunks]
-    vectors: list[list[float]] = embeddings_model.embed_documents(texts)
+
+    # encode() returns a numpy array of shape (n, dim)
+    vectors_np = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
 
     result: list[EmbeddedChunk] = [
-        EmbeddedChunk(chunk=chunk, vector=vector)
-        for chunk, vector in zip(chunks, vectors)
+        EmbeddedChunk(chunk=chunk, vector=vec.tolist())
+        for chunk, vec in zip(chunks, vectors_np)
     ]
 
     assert len(result) == len(chunks), (

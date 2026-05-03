@@ -1,8 +1,8 @@
 """
 QA pipeline for LawChain-AI PDF Chatbot.
 
-Orchestrates retrieval, conversation history injection, LLM generation,
-and citation validation to produce grounded, cited answers.
+Uses local sentence-transformers for question embedding and
+Groq (free tier) for LLM generation.
 """
 
 from __future__ import annotations
@@ -11,8 +11,7 @@ import re
 import logging
 from typing import TYPE_CHECKING
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
 from langchain.schema import SystemMessage, HumanMessage
 
 from app.core.config import settings
@@ -30,7 +29,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Regex pattern for UUID v4 (and general UUID format)
 _UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     re.IGNORECASE,
@@ -106,12 +104,12 @@ class QAPipeline:
         # Step 2: Cap question length
         question = question[:2000]
 
-        # Step 3: Embed the question
-        embeddings_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            openai_api_key=settings.OPENAI_API_KEY,
-        )
-        query_vector = embeddings_model.embed_query(question)
+        # Step 3: Embed the question using local model
+        from app.services.ingestion import _get_embedding_model
+        model = _get_embedding_model()
+        query_vector: list[float] = model.encode(
+            question, show_progress_bar=False, convert_to_numpy=True
+        ).tolist()
 
         # Step 4: Retrieve relevant chunks
         chunks = self._document_store.similarity_search(session_id, query_vector, k=5)
@@ -159,7 +157,10 @@ class QAPipeline:
 
         messages.append(HumanMessage(content=question))
 
-        llm = ChatOpenAI(model="gpt-4o", openai_api_key=settings.OPENAI_API_KEY)
+        llm = ChatGroq(
+            model=settings.GROQ_MODEL,
+            api_key=settings.GROQ_API_KEY,
+        )
         response = llm.invoke(messages)
         raw_answer: str = response.content
 

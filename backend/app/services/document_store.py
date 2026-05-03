@@ -12,12 +12,13 @@ import logging
 import faiss
 import numpy as np
 
+from app.core.config import settings
 from app.models.models import Chunk, EmbeddedChunk
 
 logger = logging.getLogger(__name__)
 
-# Dimensionality of OpenAI text-embedding-3-small vectors
-_VECTOR_DIM = 1536
+# Dimensionality driven by config (384 for all-MiniLM-L6-v2)
+_VECTOR_DIM = settings.EMBEDDING_DIM
 
 
 class DocumentStore:
