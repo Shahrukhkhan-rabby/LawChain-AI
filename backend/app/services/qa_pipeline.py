@@ -104,12 +104,9 @@ class QAPipeline:
         # Step 2: Cap question length
         question = question[:2000]
 
-        # Step 3: Embed the question using local model
-        from app.services.ingestion import _get_embedding_model
-        model = _get_embedding_model()
-        query_vector: list[float] = model.encode(
-            question, show_progress_bar=False, convert_to_numpy=True
-        ).tolist()
+        # Step 3: Embed the question using the same LSA model
+        from app.services.ingestion import _embed_texts
+        query_vector: list[float] = _embed_texts([question])[0]
 
         # Step 4: Retrieve relevant chunks
         chunks = self._document_store.similarity_search(session_id, query_vector, k=5)

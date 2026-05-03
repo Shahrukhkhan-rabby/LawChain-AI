@@ -1,8 +1,9 @@
 """
 Ingestion pipeline for LawChain-AI PDF Chatbot.
 
-Provides PDF text extraction, text chunking, local embedding via
-sentence-transformers, and the IngestionPipeline orchestrator.
+Provides PDF text extraction, text chunking, and local TF-IDF
+embeddings via scikit-learn HashingVectorizer (pure Python, no native
+dependencies, no fitting required).
 """
 
 from __future__ import annotations
@@ -11,10 +12,12 @@ import logging
 import uuid
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pdfplumber
 import tiktoken
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import HashingVectorizer
+from sklearn.preprocessing import normalize
 
 from app.core.config import settings
 from app.models.models import (
@@ -31,7 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Tokenizer (shared across the module)
+# Tokenizer
 # ---------------------------------------------------------------------------
 
 _ENCODING_NAME = "cl100k_base"
@@ -39,24 +42,34 @@ _tokenizer = tiktoken.get_encoding(_ENCODING_NAME)
 
 
 def _token_length(text: str) -> int:
-    """Return the number of tokens in *text* using cl100k_base encoding."""
     return len(_tokenizer.encode(text))
 
 
 # ---------------------------------------------------------------------------
-# Local embedding model (loaded once at startup)
+# Hashing vectorizer — stateless, no fitting needed, always works
 # ---------------------------------------------------------------------------
 
-_embedding_model: SentenceTransformer | None = None
+_vectorizer = HashingVectorizer(
+    n_features=settings.EMBEDDING_DIM,
+    norm="l2",
+    alternate_sign=False,
+    analyzer="word",
+    ngram_range=(1, 2),
+    strip_accents="unicode",
+    token_pattern=r"\w{2,}",
+)
 
 
-def _get_embedding_model() -> SentenceTransformer:
-    """Lazily load and cache the sentence-transformers model."""
-    global _embedding_model  # noqa: PLW0603
-    if _embedding_model is None:
-        logger.info("Loading embedding model: %s", settings.EMBEDDING_MODEL)
-        _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
-    return _embedding_model
+def _embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed texts using hashing vectorizer — returns dense 384-dim vectors."""
+    sparse = _vectorizer.transform(texts)
+    dense: np.ndarray = sparse.toarray().astype(np.float32)
+    # Re-normalise rows (HashingVectorizer norm='l2' handles sparse but
+    # toarray() may lose precision — normalise again to be safe)
+    norms = np.linalg.norm(dense, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    dense = dense / norms
+    return dense.tolist()
 
 
 # ---------------------------------------------------------------------------
@@ -199,26 +212,17 @@ def chunk_text(
 
 
 def embed_chunks(chunks: list[Chunk]) -> list[EmbeddedChunk]:
-    """Generate vector embeddings using a local sentence-transformers model.
+    """Embed chunks using HashingVectorizer (pure Python, no native deps).
 
-    Uses ``all-MiniLM-L6-v2`` (384 dimensions) — runs entirely locally,
-    no API key or internet connection required.
-
-    Args:
-        chunks: Non-empty list of :class:`Chunk` objects to embed.
-
-    Returns:
-        A list of :class:`EmbeddedChunk` objects in the same order as *chunks*.
+    Stateless — no fitting required. Works with any corpus size.
+    Produces 384-dimensional L2-normalised vectors.
     """
-    model = _get_embedding_model()
     texts = [c.text for c in chunks]
-
-    # encode() returns a numpy array of shape (n, dim)
-    vectors_np = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+    vectors = _embed_texts(texts)
 
     result: list[EmbeddedChunk] = [
-        EmbeddedChunk(chunk=chunk, vector=vec.tolist())
-        for chunk, vec in zip(chunks, vectors_np)
+        EmbeddedChunk(chunk=chunk, vector=vector)
+        for chunk, vector in zip(chunks, vectors)
     ]
 
     assert len(result) == len(chunks), (

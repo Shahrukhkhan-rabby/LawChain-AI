@@ -10,7 +10,8 @@ pydantic-settings==2.3.4
 python-jose[cryptography]==3.3.0
 python-multipart==0.0.9
 tiktoken==0.7.0
-sentence-transformers==3.0.1
+scikit-learn==1.5.1
+numpy==1.26.4
 pytest==8.2.2
 hypothesis==6.103.4
 pytest-asyncio==0.23.8
