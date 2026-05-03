@@ -72,3 +72,6 @@ yarn-error.log*
 # ── Misc ─────────────────────────────────────────────────────────────────────
 *.tmp
 *.bak
+
+# Session persistence store (runtime data, not source)
+backend/app/services/session_store*
